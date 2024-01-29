@@ -1,8 +1,8 @@
 {
-    "name": "printnode/printnode-php",
+    "name": "goedgepickt/printnode-php",
     "description": "Connect any printer to your application with PrintNode Client and easy to use JSON API",
     "require": {
-        "php": ">=7.0",
+        "php": "^7.2 || ^8.0",
         "ext-curl": "*"
     },
     "keywords": [
@@ -11,8 +11,11 @@
         "API",
         "printing"
     ],
-    "homepage": "https://github.com/PrintNode/PrintNode-PHP",
+    "homepage": "https://github.com/GoedGepickt/dhlparcel-php-api",
     "authors": [{
+        "name": "GoedGepickt",
+        "homepage": "https://github.com/GoedGepickt",
+    }, {
         "email":    "support@printnode.com",
         "name":     "Contributors",
         "homepage": "https://www.printnode.com"
