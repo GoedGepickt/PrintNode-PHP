@@ -2,290 +2,207 @@
 
 namespace PrintNode;
 
+/**
+ * Request
+ *
+ * HTTP request object.
+ *
+ * @method Computer[] getComputers() getComputers(int $computerId)
+ * @method Printer[] getPrinters() getPrinters(int $printerId)
+ * @method PrintJob[] getPrintJobs() getPrintJobs(int $printJobId)
+ */
 class Request
 {
-    
     /**
-     * Reference to a credentials object
+     * Credentials to use when communicating with API
      * @var Credentials
      */
     private $credentials;
-    
     /**
-     * Service to which the request will be made
+     * API url to use with the client
      * @var string
-     */
-    private $service;
-    
+     * */
+    private $apiurl = "https://api.printnode.com";
     /**
-     * Method to use for the request
-     * @var string
-     */
-    private $method;
-    
+     * Header for child authentication
+     * @var string[]
+     * */
+    private $childauth = array();
     /**
-     * The host to make this request to
-     * @var string
+     * Offset query argument on GET requests
+     * @var int
      */
-    public $apiHost = 'api.printnode.com';
-    
+    private $offset = 0;
+
     /**
-     * If set, requests that the responding JSON should be formatted for human
-     * readability
-     * @var bool 
+     * Limit query argument on GET requests
+     * @var mixed
      */
-    public $prettyJSON = false;
-    
+    private $limit = 10;
+
     /**
-     * If set, requests that this API request should not be logged.
-     * @var bool
+     * Map entity names to API URLs
+     * @var string[]
      */
-    public $dontLog = false;
-    
+
+    private $endPointUrls = array(
+        'PrintNode\Client' => '/download/clients',
+        'PrintNode\Download' => '/download/client',
+        'PrintNode\ApiKey' => '/account/apikey',
+        'PrintNode\Account' => '/account',
+        'PrintNode\Tag' => '/account/tag',
+        'PrintNode\Whoami' => '/whoami',
+        'PrintNode\Computer' => '/computers',
+        'PrintNode\Printer' => '/printers',
+        'PrintNode\PrintJob' => '/printjobs',
+    );
+
     /**
-     * Stores any additional arbitary headers that should be sent with the 
-     * request
-     * @var array
+     * Map method names used by __call to entity names
+     * @var string[]
      */
-    public $additionalHeaders = array();
-    
+    private $methodNameEntityMap = array(
+        'Clients' => 'PrintNode\Client',
+        'Downloads' => 'PrintNode\Download',
+        'ApiKeys' => 'PrintNode\ApiKey',
+        'Account' => 'PrintNode\Account',
+        'Tags' => 'PrintNode\Tag',
+        'Whoami' => 'PrintNode\Whoami',
+        'Computers' => 'PrintNode\Computer',
+        'Printers' => 'PrintNode\Printer',
+        'PrintJobs' => 'PrintNode\PrintJob',
+    );
+
     /**
-     * The body of the request to be sent
-     * @var string
+     * Constructor
+     * @param Credentials $credentials
+     * @param mixed $endPointUrls
+     * @param mixed $methodNameEntityMap
+     * @param int $offset
+     * @param int $limit
+     * @return Request
      */
-    public $body;
-    
-    /**
-     * Request logging callback
-     * @var function
-     */
-    public $requestLogMethod;
-    
-    /**
-     * Response logging callback
-     * @var function
-     */
-    public $responseLogMethod;
-    
-    /**
-     * Class constructor
-     * 
-     * @param \PrintNode\Credentials $credentials
-     * @param string $service
-     * @param string $method
-     */
-    public function __construct(Credentials $credentials, $service, $method)
+    public function __construct(Credentials $credentials, array $endPointUrls = array(), array $methodNameEntityMap = array(), $offset = 0, $limit = 10)
     {
+        if (!function_exists('curl_init')) {
+            throw new \RuntimeException('Function curl_init does not exist.');
+        }
 
         $this->credentials = $credentials;
-        $this->setService($service);
-        $this->setMethod($method);
-        
-    }
-    
-    /**
-     * Sets the service property
-     * 
-     * @param string $service The service to set
-     * @return boolean
-     */
-    protected function setService($service)
-    {
-        
-        $this->service = $service;
-        
-        return true;
-        
-    }
-    
-    /**
-     * Sets the request property
-     * 
-     * @param string $method The request method to set
-     * @return boolean
-     */
-    protected function setMethod($method)
-    {
-                
-        $this->method = $method;
-        
-        return true;
-        
-    }
-    
-    /**
-     * Loads in overriding properties from the client
-     * 
-     * @param Client $client
-     * @return boolean
-     */
-    public function setPropertiesFromClient($client)
-    {
-                
-        if ($client->prettyJSON) {
-            $this->prettyJSON = (bool)$client->prettyJSON;
+
+        if ($endPointUrls) {
+            $this->endPointUrls = $endPointUrls;
         }
-        
-        if ($client->dontLog) {
-            $this->dontLog = (bool)$client->dontLog;
+
+        if ($methodNameEntityMap) {
+            $this->methodNameEntityMap = $methodNameEntityMap;
         }
-        
-        if (is_array($client->additionalHeaders)
-            && (sizeof($client->additionalHeaders) > 0)) {
-            $this->additionalHeaders = $client->additionalHeaders;
-        }
-        
-        if ($client->apiHost) {
-            $this->apiHost = $client->apiHost;
-        }
-        
-        return true;
-        
+
+        $this->makeEndPointUrls();
+
+        $this->setOffset($offset);
+        $this->setLimit($limit);
     }
-    
+
+
     /**
-     * Returns the URL to make the request to
-     * 
+     * Get API EndPoint URL from an entity name
+     * @param mixed $entityName
      * @return string
      */
-    public function getUrl()
+    private function makeEndPointUrls()
     {
-        
-        if (!$this->service) {
-            throw new Exception\RuntimeException('Service not set');
+        $endPointUrls;
+        foreach ($this->methodNameEntityMap as $classes) {
+            $endPointUrls[$classes] = $this->apiurl.$this->endPointUrls[$classes];
         }
-        
-        return 'https://' . $this->apiHost . '/' . $this->service;
-        
+        $this->endPointUrls = $endPointUrls;
     }
-    
-    /**
-     * Returns the authentication headers for a request
-     * 
-     * @return array
-     */
-    public function getCredentialHeader()
+
+    private function getEndPointUrl($entityName)
     {
-        
-        if (mb_strlen(trim($this->credentials->apiKey))) {
-            $headers = array(
-                'Authorization: Basic ' . \base64_encode($this->credentials->apiKey . ':'),
+        if (!isset($this->endPointUrls[$entityName])) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Missing endPointUrl for entityName "%s"',
+                    $entityName
+                )
             );
-        } else {
+        }
 
-            $headers = array(
-                'Authorization: Basic ' . \base64_encode($this->credentials->username . ':' . $this->credentials->password),
-                'X-Auth-With-Account-Credentials: true',
-            );
+        return $this->endPointUrls[$entityName];
+    }
 
-        }
-        
-        if ($childAccountHeaders = $this->getChildAccountHeaders()) {
-            $headers = \array_merge($headers, $childAccountHeaders);
-        }
-        
-        return $headers;
-
-    }
-    
     /**
-     * Returns child account authentication request headers, if set
-     * 
-     * @return array
-     */
-    public function getChildAccountHeaders()
-    {
-        
-        if ($this->credentials->childAccountEmail) {
-            
-            return array(sprintf('X-Child-Account-By-Email: %s',
-                                 $this->credentials->childAccountEmail));
-            
-        } else if ($this->credentials->childAccountCreatorRef) {
-            
-            return array(sprintf('X-Child-Account-By-CreatorRef: %s',
-                                 $this->credentials->childAccountCreatorRef));
-            
-        } else if ($this->credentials->childAccountId) {
-            
-            return array(sprintf('X-Child-Account-By-Id: %s',
-                                 $this->credentials->childAccountId));
-            
-        }
-        
-        return false;
-        
-    }
-    
-    /**
-     * Returns a full set of authentication headers
-     * 
-     * @return array
-     */
-    public function getHeaders()
-    {
-        
-        // The 'Expect:' header is required to prevent the server responding 
-        // with '100 Continue' headers
-        $headers = array(
-            'Content-Type: application/json',
-            'Expect:',
-        );
-        
-        if ($this->prettyJSON) {
-            $headers[] = 'X-Pretty: 1';
-        }
-        
-        if ($this->dontLog) {
-            $headers[] = 'X-Dont-Log: 1';
-        }
-        
-        return \array_merge($headers, $this->getCredentialHeader());
-        
-    }
-    
-    /**
-     * Makes a curl request and returns a response object
-     * 
-     * @return \PrintNode\Response
-     */
-    public function process()
-    {
-        
-        $response = $this->curlExec($this->method, $this->getUrl(), $this->getHeaders());
-        
-        return new Response($response);
-        
-    }
-    
-    /**
-     * Makes a curl request.
-     * 
-     * @param string $method Request method 
-     * @param string $url The url to make the request to
-     * @param string $headers Request headers to send
+     * Get entity name from __call method name
+     * @param mixed $methodName
      * @return string
-     * @throws Exception\RuntimeException
      */
-    protected function curlExec ($method, $url, $headers)
+    private function getEntityName($methodName)
     {
-
-        $curlHandle = $this->getCurlHandle();
-        
-        curl_setopt($curlHandle, CURLOPT_CUSTOMREQUEST, $method);
-        curl_setopt($curlHandle, CURLOPT_URL, $url);        
-        curl_setopt($curlHandle, CURLOPT_HTTPHEADER, $this->getHeaders());
-        
-        if ($this->body) {
-            curl_setopt($curlHandle, CURLOPT_POSTFIELDS, (string) $this->body);
+        if (!preg_match('/^get(.+)$/', $methodName, $matchesArray)) {
+            throw new \BadMethodCallException(
+                sprintf(
+                    'Method %s::%s does not exist',
+                    get_class($this),
+                    $methodName
+                )
+            );
         }
-        
-        $response = @curl_exec($curlHandle);
-        
-       $curlInfo = curl_getinfo($curlHandle);
-        
-        if ($response === false) {
-            throw new Exception\RuntimeException(
+
+        if (!isset($this->methodNameEntityMap[$matchesArray[1]])) {
+            throw new \BadMethodCallException(
+                sprintf(
+                    '%s is missing an methodNameMap entry for %s',
+                    get_class($this),
+                    $methodName
+                )
+            );
+        }
+
+        return $this->methodNameEntityMap[$matchesArray[1]];
+    }
+
+    /**
+     * Initialise cURL with the options we need
+     * to communicate successfully with API URL.
+     * @param void
+     * @return resource
+     */
+    private function curlInit()
+    {
+        $curlHandle = curl_init();
+
+        curl_setopt($curlHandle, CURLOPT_ENCODING, 'gzip,deflate');
+
+        curl_setopt($curlHandle, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($curlHandle, CURLOPT_VERBOSE, false);
+        curl_setopt($curlHandle, CURLOPT_HEADER, true);
+
+        curl_setopt($curlHandle, CURLOPT_USERPWD, (string)$this->credentials);
+
+        curl_setopt($curlHandle, CURLOPT_SSL_VERIFYPEER, false);
+		curl_setopt($curlHandle, CURLOPT_SSL_VERIFYHOST, 2);
+
+		curl_setopt($curlHandle, CURLOPT_TIMEOUT, 4);
+
+        curl_setopt($curlHandle, CURLOPT_FOLLOWLOCATION, true);
+
+        return $curlHandle;
+    }
+
+    /**
+     * Execute cURL request using the specified API EndPoint
+     * @param mixed $curlHandle
+     * @param mixed $endPointUrl
+     * @return Response
+     */
+    private function curlExec($curlHandle, $endPointUrl)
+    {
+        curl_setopt($curlHandle, CURLOPT_URL, $endPointUrl);
+
+        if (($response = @curl_exec($curlHandle)) === false) {
+            throw new \RuntimeException(
                 sprintf(
                     'cURL Error (%d): %s',
                     curl_errno($curlHandle),
@@ -293,32 +210,488 @@ class Request
                 )
             );
         }
-        
-        return $response;
-                
-    }
-    
-    /**
-     * Returns an instance of the curl handle 
-     * 
-     * @return mixed
-     */
-    protected function getCurlHandle()
-    {
-        
-        $curlHandle = curl_init();
 
-        curl_setopt($curlHandle, CURLOPT_ENCODING, 'gzip,deflate');
-        curl_setopt($curlHandle, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curlHandle, CURLOPT_VERBOSE, false);
-        curl_setopt($curlHandle, CURLOPT_HEADER, true);
-        curl_setopt($curlHandle, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($curlHandle, CURLOPT_SSL_VERIFYHOST, 2);
-        curl_setopt($curlHandle, CURLOPT_TIMEOUT, 30);
-        curl_setopt($curlHandle, CURLOPT_FOLLOWLOCATION, false);
-        
-        return $curlHandle;
-        
+		curl_close($curlHandle);
+
+        $response_parts = explode("\r\n\r\n", $response);
+
+        $content = array_pop($response_parts);
+
+        $headers = explode("\r\n", array_pop($response_parts));
+
+        return new Response($endPointUrl, $content, $headers);
     }
-    
+
+    /**
+     * Make a GET request using cURL
+     * @param mixed $endPointUrl
+     * @return Response
+     */
+    private function curlGet($endPointUrl)
+    {
+        $curlHandle = $this->curlInit();
+        curl_setopt($curlHandle, CURLOPT_HTTPHEADER, $this->childauth);
+
+        return $this->curlExec(
+            $curlHandle,
+            $endPointUrl
+        );
+    }
+
+    private function curlDelete($endPointUrl)
+    {
+        $curlHandle = $this->curlInit();
+
+        curl_setopt($curlHandle, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        curl_setopt($curlHandle, CURLOPT_HTTPHEADER, $this->childauth);
+
+        return $this->curlExec(
+            $curlHandle,
+            $endPointUrl
+        );
+    }
+
+    /**
+     * Apply offset and limit to a end point URL.
+     * @param mixed $endPointUrl
+     * @return string
+     */
+    private function applyOffsetLimit($endPointUrl)
+    {
+        $endPointUrlArray = parse_url($endPointUrl);
+
+        if (!isset($endPointUrlArray['query'])) {
+            $endPointUrlArray['query'] = null;
+        }
+
+        parse_str($endPointUrlArray['query'], $queryStringArray);
+
+        $queryStringArray['offset'] = $this->offset;
+        $queryStringArray['limit'] = min(max(1, $this->limit), 500);
+
+        $endPointUrlArray['query'] = http_build_query($queryStringArray, null, '&');
+
+        $endPointUrl = (isset($endPointUrlArray['scheme'])) ? "{$endPointUrlArray['scheme']}://" : '';
+        $endPointUrl.= (isset($endPointUrlArray['host'])) ? "{$endPointUrlArray['host']}" : '';
+        $endPointUrl.= (isset($endPointUrlArray['port'])) ? ":{$endPointUrlArray['port']}" : '';
+        $endPointUrl.= (isset($endPointUrlArray['path'])) ? "{$endPointUrlArray['path']}" : '';
+        $endPointUrl.= (isset($endPointUrlArray['query'])) ? "?{$endPointUrlArray['query']}" : '';
+
+        return $endPointUrl;
+    }
+
+    /**
+     * Make a POST/PUT/DELETE request using cURL
+     * @param Entity $entity
+     * @param mixed $httpMethod
+     * @return Response
+     */
+    private function curlSend()
+    {
+        $arguments = func_get_args();
+
+        $httpMethod = array_shift($arguments);
+
+        $data = array_shift($arguments);
+
+        $endPointUrl = array_shift($arguments);
+
+        $curlHandle = $this->curlInit();
+
+        curl_setopt($curlHandle, CURLOPT_CUSTOMREQUEST, $httpMethod);
+        curl_setopt($curlHandle, CURLOPT_POSTFIELDS, (string)$data);
+        curl_setopt($curlHandle, CURLOPT_HTTPHEADER, array_merge(array('Content-Type: application/json'), $this->childauth));
+
+        return $this->curlExec(
+            $curlHandle,
+            $endPointUrl
+        );
+    }
+    /**
+     * Set the offset for GET requests
+     * @param mixed $offset
+     */
+    public function setOffset($offset)
+    {
+        if (!ctype_digit($offset) && !is_int($offset)) {
+            throw new \InvalidArgumentException('offset should be a number');
+        }
+
+        $this->offset = $offset;
+    }
+
+    /**
+     * Set the limit for GET requests
+     * @param mixed $limit
+     */
+    public function setLimit($limit)
+    {
+        if (!ctype_digit($limit) && !is_int($limit)) {
+            throw new \InvalidArgumentException('limit should be a number');
+        }
+
+        $this->limit = $limit;
+    }
+
+    /**
+     * Delete an ApiKey for a child account
+     * @param string $apikey
+     * @return Response
+     * */
+    public function deleteApiKey($apikey)
+    {
+        $endPointUrl = $this->apiurl."/account/apikey/".$apikey;
+
+        $response = $this->curlDelete($endPointUrl);
+
+        return $response;
+    }
+
+    /**
+     * Delete a tag for a child account
+     * @param string $tag
+     * @return Response
+     * */
+    public function deleteTag($tag)
+    {
+        $endPointUrl = $this->apiurl."/account/tag/".$tag;
+
+        $response = $this->curlDelete($endPointUrl);
+
+        return $response;
+    }
+
+    /**
+     * Delete a child account
+     * MUST have $this->childauth set to run.
+     * @return Response
+     * */
+    public function deleteAccount()
+    {
+        if (!isset($this->childauth)) {
+            throw new Exception(
+                sprintf(
+                    'No child authentication set - cannot delete your own account.'
+                )
+            );
+        }
+
+        $endPointUrl = $this->apiurl."/account/";
+
+        $response = $this->curlDelete($endPointUrl);
+
+        return $response;
+    }
+
+    /**
+     * Returns a client key.
+     * @param string $uuid
+     * @param string $edition
+     * @param string $version
+     * @return Resposne
+     * */
+    public function getClientKey($uuid, $edition, $version)
+    {
+        $endPointUrl = $this->apiurl."/client/key/".$uuid."?edition=".$edition."&version=".$version;
+
+        $response = $this->curlGet($endPointUrl);
+
+        return $response;
+    }
+
+    /**
+     * Gets print job states.
+     * @param string $printjobId OPTIONAL:if unset gives states relative to all printjobs.
+     * @return Entity[]
+     * */
+    public function getPrintJobStates()
+    {
+        $arguments = func_get_args();
+
+        if (count($arguments) > 1) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Too many arguments given to getPrintJobsStates.'
+                )
+            );
+        }
+
+        $endPointUrl = $this->apiurl."/printjobs/";
+
+        if (count($arguments) == 0) {
+            $endPointUrl.= 'states/';
+        } else {
+            $arg_1 = array_shift($arguments);
+            $endPointUrl.= $arg_1.'/states/';
+        }
+
+        $response = $this->curlGet($endPointUrl);
+
+        if ($response->getStatusCode() != '200') {
+            throw new HttpException($response);
+        }
+
+        return Entity::makeFromResponse("PrintNode\State", json_decode($response->getContent()));
+    }
+
+
+    /**
+     * Gets PrintJobs relative to a printer.
+     * @param string $printerIdSet set of printer ids to find PrintJobs relative to
+     * @param string $printJobId OPTIONAL: set of PrintJob ids relative to the printer.
+     * @return Entity[]
+     * */
+    public function getPrintJobsByPrinters()
+    {
+        $arguments = func_get_args();
+
+        if (count($arguments) > 2) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    'Too many arguments given to getPrintJobsByPrinters.'
+                )
+            );
+        }
+
+        $endPointUrl = $this->apiurl."/printers/";
+
+        $arg_1 = array_shift($arguments);
+
+        $endPointUrl.= $arg_1.'/printjobs/';
+
+        foreach ($arguments as $argument) {
+            $endPointUrl.= $argument;
+        }
+
+        $response = $this->curlGet($endPointUrl);
+
+        if ($response->getStatusCode() != '200') {
+            throw new HttpException($response);
+        }
+
+        return Entity::makeFromResponse("PrintNode\PrintJob", json_decode($response->getContent()));
+    }
+
+    /**
+     * Gets scales relative to a computer.
+     * @param string $computerId id of computer to find scales
+     * @return Entity[]
+     * */
+    public function getScales($computerId)
+    {
+        $endPointUrl = $this->apiurl."/computer/";
+        $endPointUrl.= $computerId;
+        $endPointUrl.= '/scales';
+
+        $response = $this->curlGet($endPointUrl);
+
+
+        if ($response->getStatusCode() != '200') {
+            throw new HttpException($response);
+        }
+
+        return Entity::makeFromResponse("PrintNode\Scale", json_decode($response->getContent()));
+    }
+
+    /**
+     * Get printers relative to a computer.
+     * @param string $computerIdSet set of computer ids to find printers relative to
+     * @param string $printerIdSet OPTIONAL: set of printer ids only found in the set of computers.
+     * @return Entity[]
+     * */
+    public function getPrintersByComputers()
+    {
+        $arguments = func_get_args();
+
+        if (count($arguments) > 2) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Too many arguments given to getPrintersByComputers.'
+                )
+            );
+        }
+
+        $endPointUrl = $this->apiurl."/computers/";
+
+        $arg_1 = array_shift($arguments);
+
+        $endPointUrl.= $arg_1.'/printers/';
+
+        foreach ($arguments as $argument) {
+            $endPointUrl.= $argument;
+        }
+
+        $response = $this->curlGet($endPointUrl);
+
+        if ($response->getStatusCode() != '200') {
+            throw new HttpException($response);
+        }
+
+        return Entity::makeFromResponse("PrintNode\Printer", json_decode($response->getContent()));
+    }
+
+    /**
+     * Map method names getComputers, getPrinters and getPrintJobs to entities
+     * @param mixed $methodName
+     * @param mixed $arguments
+     * @return Entity[]
+     */
+    public function __call($methodName, $arguments)
+    {
+        $entityName = $this->getEntityName($methodName);
+
+        $endPointUrl = $this->getEndPointUrl($entityName);
+
+        if (count($arguments) > 0) {
+            $arguments = array_shift($arguments);
+
+            if (!is_string($arguments)) {
+                throw new \InvalidArgumentException(
+                    sprintf(
+                        'Invalid argument type passed to %s. Expecting a string got %s',
+                        $methodName,
+                        gettype($arguments)
+                    )
+                );
+            }
+
+            $endPointUrl = sprintf(
+                '%s/%s',
+                $endPointUrl,
+                $arguments
+            );
+        } else {
+            $endPointUrl = sprintf(
+                '%s',
+                $endPointUrl
+            );
+        }
+
+        $response = $this->curlGet($endPointUrl);
+
+        if ($response->getStatusCode() != '200') {
+            throw new HttpException($response);
+        }
+
+        return Entity::makeFromResponse($entityName, json_decode($response->getContent()));
+    }
+
+    /**
+     * PATCH (update) the specified entity
+     * @param Entity $entity
+     * @return Response
+     * */
+    public function patch(Entity $entity)
+    {
+        if (!($entity instanceof Entity)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid argument type passed to patch. Expecting Entity got %s',
+                    gettype($entity)
+                )
+            );
+        }
+
+        $endPointUrl = $this->getEndPointUrl(get_class($entity));
+
+        if (method_exists($entity, 'endPointUrlArg')) {
+            $endPointUrl.= '/'.$entity->endPointUrlArg();
+        }
+
+        if (method_exists($entity, 'formatForPatch')) {
+            $entity = $entity->formatForPatch();
+        }
+
+
+        return $this->curlSend('PATCH', $entity, $endPointUrl);
+    }
+
+    /**
+     * POST (create) the specified entity
+     * @param Entity $entity
+     * @return Response
+     */
+    public function post(Entity $entity)
+    {
+        if (!($entity instanceof Entity)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid argument type passed to patch. Expecting Entity got %s',
+                    gettype($entity)
+                )
+            );
+        }
+
+        $endPointUrl = $this->getEndPointUrl(get_class($entity));
+
+        if (method_exists($entity, 'endPointUrlArg')) {
+            $endPointUrl.= '/'.$entity->endPointUrlArg();
+		}
+
+		if (method_exists($entity, 'formatForPost')){
+			$entity = $entity->formatForPost();
+		}
+
+        return $this->curlSend('POST', $entity, $endPointUrl);
+    }
+
+    /**
+     * PUT (update) the specified entity
+     * @param Entity $entity
+     * @return Response
+     */
+    public function put()
+    {
+        $arguments = func_get_args();
+
+        $entity = array_shift($arguments);
+
+        if (!($entity instanceof Entity)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid argument type passed to patch. Expecting Entity got %s',
+                    gettype($entity)
+                )
+            );
+        }
+
+        $endPointUrl = $this->getEndPointUrl(get_class($entity));
+
+        foreach ($arguments as $argument) {
+            $endPointUrl.= '/'.$argument;
+        }
+
+        return $this->curlSend('PUT', $entity, $endPointUrl);
+    }
+
+    /**
+     * DELETE (delete) the specified entity
+     * @param Entity $entity
+     * @return Response
+     */
+    public function delete(Entity $entity)
+    {
+        $endPointUrl = $this->getEndPointUrl(get_class($entity));
+
+        if (method_exists($entity, 'endPointUrlArg')) {
+            $endPointUrl.= '/'.$entity->endPointUrlArg();
+        }
+
+        return $this->curlDelete($endPointUrl);
+    }
+
+    public function setChildAccountById($id)
+    {
+        $this->childauth = array("X-Child-Account-By-Id: ".$id);
+    }
+
+    public function setChildAccountByEmail($email)
+    {
+        $this->childauth = array("X-Child-Account-By-Email: ".$email);
+    }
+
+    public function setChildAccountByCreatorRef($creatorRef)
+    {
+        $this->childauth = array("X-Child-Account-By-CreatorRef: ".$creatorRef);
+    }
 }
