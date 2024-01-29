@@ -2,114 +2,96 @@
 
 namespace PrintNode;
 
-/**
- * Credentials
- *
- * @desc Used Request when communicating with API server.
- */
-abstract class Credentials
+class Credentials implements CredentialsInterface
 {
-    
-    /**
-     * API Key to be used in the authentication header
-     * @var string 
-     */
-    public $apiKey;
-    
-    /**
-     * Username to be used in the authentication header
-     * @var string 
-     */
-    public $username;
-    
-    /**
-     * Password to be used in the authentication header
-     * @var string 
-     */
-    public $password;
-    
-    /**
-     * Child Account Email Address
-     * @var string 
-     */
-    public $childAccountEmail;
-    
-    /**
-     * Child Account Creator Reference
-     * @var string 
-     */
-    public $childAccountCreatorRef;
-    
-    /**
-     * Child Account Id
-     * @var string 
-     */
-    public $childAccountId;
-    
-    /**
-     * Sets the authentication context to a child account by the email address
-     * assigned to the child acount.
-     * 
-     * @param string $email Email address 
-     * @return boolean
-     */
-    public function setChildAccountByEmail($email)
+    private $apikey;
+    private $emailPassword;
+
+    public function __construct()
     {
-        
-        $this->clearChildCredentials();
-        $this->childAccountEmail = $email;
-        
-        return true;
-        
     }
-    
+
     /**
-     * Sets the authentication context to a child account by the creator
-     * reference assigned to the child acount.
-     * 
-     * @param string $creatorRef Creator reference id
-     * @return boolean
-     */
-    public function setChildAccountByCreatorRef($creatorRef)
-    {
-        
-        $this->clearChildCredentials();
-        $this->childAccountCreatorRef = $creatorRef;
-        
-        return true;
-        
+     * return correct authentcation method 
+     * @param void
+     * @return string
+     * */
+    public function __toString()
+	{
+		return (isset($this->apikey) ? $this->apikey : $this->emailPassword);
     }
-    
+
     /**
-     * Sets the authentication context to a child account by the account id
-     * assigned to the child acount.
-     * 
-     * @param string $id Account Id
-     * @return boolean
-     */
-    public function setChildAccountById($id)
+     * Set email and password for Email:Password authentication.
+     * @param string $email
+	 * @param string $password
+	 * @return Credentials
+     * */
+
+    public function setEmailPassword($email, $password)
     {
-        
-        $this->clearChildCredentials();
-        $this->childAccountId = $id;
-        
-        return true;
-        
+        if (isset($this->apikey)) {
+            throw new \Exception(
+                "ApiKey already set."
+            );
+		}
+		$this->emailPassword = $email.': '.$password;
+		return $this;
     }
-    
+
     /**
-     * Clears all existing credential properties
-     * @return boolean
-     */
-    public function clearChildCredentials()
+     * Set email and password for Email:Password authentication.
+	 * @param string $apikey
+	 * @return Credentials
+     * */
+    public function setApiKey($apikey)
     {
-        
-        $this->childAccountEmail = null;    
-        $this->childAccountCreatorRef = null;
-        $this->childAccountId = null;
-        
-        return true;
-        
+        if (isset($this->emailPassword)) {
+            throw new \Exception(
+                "EmailPassword already set."
+            );
+		}
+		$this->apikey = $apikey . ':';
+		return $this;
     }
-    
+
+    /**
+     * Set property on object
+     * @param mixed $propertyName
+     * @param mixed $value
+     * @return void
+     * */
+    public function __set($propertyName, $value)
+    {
+        if (!property_exists($this, $propertyName)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    '%s does not have a property named %s',
+                    get_class($this),
+                    $propertyName
+                )
+            );
+		}
+		$this->$propertyName = $value;
+    }
+
+    /**
+     * Get property on object
+     * @param mixed $propertyName
+     * @return mixed
+     * */
+    public function __get($propertyName)
+    {
+        if (!property_exists($this, $propertyName)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    '%s does not have a property named %s',
+                    get_class($this),
+                    $propertyName
+                )
+            );
+        }
+
+        return $this->$propertyName;
+    }
 }
